@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ถังไหนดี — สแกนแยกขยะด้วย AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@500;600;700&family=Noto+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#EDEBDF;
+    --bg-2:#E4E1D2;
+    --ink:#1B231C;
+    --ink-soft:#54604F;
+    --card:#FBFAF4;
+    --line: rgba(27,35,28,0.14);
+
+    --organic:#3F7D45;
+    --organic-soft:#E4EEDF;
+    --recycle:#C99A2E;
+    --recycle-soft:#F3EAD3;
+    --general:#3A6EA5;
+    --general-soft:#DEE7F0;
+    --hazard:#C1473A;
+    --hazard-soft:#F3DEDB;
+
+    --accent: var(--ink);
+    --accent-soft: var(--bg-2);
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      radial-gradient(circle at 12% 8%, rgba(63,125,69,0.07), transparent 40%),
+      radial-gradient(circle at 90% 85%, rgba(58,110,165,0.07), transparent 45%),
+      var(--bg);
+    color:var(--ink);
+    font-family:'Noto Sans Thai','Noto Sans',sans-serif;
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  .wrap{
+    max-width:560px;
+    margin:0 auto;
+    padding:28px 20px 60px;
+  }
+
+  header.top{
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+    margin-bottom:22px;
+  }
+  .eyebrow{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .eyebrow .dot{
+    width:6px;height:6px;border-radius:50%;
+    background:var(--organic);
+    box-shadow:0 0 0 3px var(--organic-soft);
+  }
+  h1{
+    font-family:'Kanit',sans-serif;
+    font-weight:700;
+    font-size:clamp(26px,6vw,34px);
+    line-height:1.15;
+    margin:0;
+    letter-spacing:-0.01em;
+  }
+  .sub{
+    color:var(--ink-soft);
+    font-size:14.5px;
+    line-height:1.5;
+    max-width:44ch;
+  }
+
+  /* ---- scanner card ---- */
+  .scanner{
+    position:relative;
+    background:#12160F;
+    border-radius:22px;
+    overflow:hidden;
+    aspect-ratio:4/5;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.4) inset, 0 18px 40px -18px rgba(27,35,28,0.45);
+    transition: box-shadow .4s ease;
+  }
+  .scanner.state-organic{ box-shadow: 0 0 0 3px var(--organic), 0 18px 40px -18px rgba(27,35,28,0.45); }
+  .scanner.state-recycle{ box-shadow: 0 0 0 3px var(--recycle), 0 18px 40px -18px rgba(27,35,28,0.45); }
+  .scanner.state-general{ box-shadow: 0 0 0 3px var(--general), 0 18px 40px -18px rgba(27,35,28,0.45); }
+  .scanner.state-hazard{ box-shadow: 0 0 0 3px var(--hazard), 0 18px 40px -18px rgba(27,35,28,0.45); }
+
+  video, .captured-img{
+    position:absolute; inset:0;
+    width:100%; height:100%;
+    object-fit:cover;
+  }
+  .captured-img{display:none;}
+
+  .veil{
+    position:absolute; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    flex-direction:column; gap:10px;
+    color:#EDEBDF;
+    text-align:center;
+    padding:24px;
+    font-size:13.5px;
+    line-height:1.6;
+    background:linear-gradient(160deg,#1B231C,#12160F);
+  }
+  .veil.hidden{display:none;}
+  .veil svg{opacity:0.85;}
+  .veil button{
+    margin-top:6px;
+  }
+
+  /* corner brackets */
+  .brackets span{
+    position:absolute;
+    width:26px; height:26px;
+    border:2.5px solid #F1EFE0;
+    opacity:0.9;
+    transition: border-color .3s ease;
+  }
+  .scanner.state-organic .brackets span{border-color:var(--organic);}
+  .scanner.state-recycle .brackets span{border-color:var(--recycle);}
+  .scanner.state-general .brackets span{border-color:var(--general);}
+  .scanner.state-hazard .brackets span{border-color:var(--hazard);}
+  .brackets .tl{top:16px;left:16px;border-right:none;border-bottom:none;border-radius:6px 0 0 0;}
+  .brackets .tr{top:16px;right:16px;border-left:none;border-bottom:none;border-radius:0 6px 0 0;}
+  .brackets .bl{bottom:16px;left:16px;border-right:none;border-top:none;border-radius:0 0 0 6px;}
+  .brackets .br{bottom:16px;right:16px;border-left:none;border-top:none;border-radius:0 0 6px 0;}
+
+  .scanline{
+    position:absolute;
+    left:16px; right:16px;
+    height:2px;
+    background:linear-gradient(90deg, transparent, #A9E3A9, transparent);
+    box-shadow:0 0 12px 2px rgba(169,227,169,0.7);
+    animation: sweep 2.6s ease-in-out infinite;
+    opacity:0;
+  }
+  .scanner.scanning .scanline{opacity:1;}
+  @keyframes sweep{
+    0%{ top:16px; }
+    50%{ top:calc(100% - 18px); }
+    100%{ top:16px; }
+  }
+
+  .hint-chip{
+    position:absolute;
+    bottom:16px; left:50%;
+    transform:translateX(-50%);
+    background:rgba(18,22,15,0.55);
+    backdrop-filter:blur(6px);
+    color:#F1EFE0;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    letter-spacing:0.06em;
+    padding:6px 12px;
+    border-radius:100px;
+    border:1px solid rgba(241,239,224,0.25);
+  }
+
+  /* ---- controls ---- */
+  .controls{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:16px;
+    margin-top:20px;
+  }
+  .shutter{
+    width:68px; height:68px;
+    border-radius:50%;
+    background:var(--card);
+    border:3px solid var(--ink);
+    cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    transition: transform .15s ease, background .2s ease;
+    flex-shrink:0;
+  }
+  .shutter:active{transform:scale(0.92);}
+  .shutter:disabled{opacity:0.4; cursor:default;}
+  .shutter .ring{
+    width:50px;height:50px;border-radius:50%;
+    background:var(--ink);
+  }
+  .side-btn{
+    font-family:'Noto Sans Thai',sans-serif;
+    font-size:13px;
+    font-weight:500;
+    color:var(--ink-soft);
+    background:transparent;
+    border:1.5px solid var(--line);
+    border-radius:100px;
+    padding:10px 16px;
+    cursor:pointer;
+    transition: border-color .2s ease, color .2s ease;
+  }
+  .side-btn:hover{border-color:var(--ink); color:var(--ink);}
+  input[type=file]{display:none;}
+
+  button{font-family:inherit;}
+
+  /* ---- result ---- */
+  .result{
+    margin-top:22px;
+    border-radius:18px;
+    background:var(--card);
+    border:1px solid var(--line);
+    overflow:hidden;
+    max-height:0;
+    opacity:0;
+    transition: max-height .5s ease, opacity .4s ease;
+  }
+  .result.show{
+    max-height:600px;
+    opacity:1;
+  }
+  .result-head{
+    display:flex;
+    align-items:center;
+    gap:14px;
+    padding:20px 20px 16px;
+  }
+  .result-icon{
+    width:46px;height:46px;
+    border-radius:12px;
+    display:flex;align-items:center;justify-content:center;
+    flex-shrink:0;
+  }
+  .result-icon svg{width:24px;height:24px;}
+  .result-title-th{
+    font-family:'Kanit',sans-serif;
+    font-weight:600;
+    font-size:20px;
+    line-height:1.2;
+  }
+  .result-title-en{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+    margin-top:2px;
+  }
+
+  .confidence-row{
+    padding:0 20px 16px;
+  }
+  .confidence-label{
+    display:flex;justify-content:space-between;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    color:var(--ink-soft);
+    margin-bottom:6px;
+  }
+  .confidence-track{
+    height:6px;
+    border-radius:100px;
+    background:var(--accent-soft);
+    overflow:hidden;
+  }
+  .confidence-fill{
+    height:100%;
+    width:0%;
+    border-radius:100px;
+    transition: width .8s cubic-bezier(.2,.8,.2,1);
+  }
+
+  .result-body{
+    padding:0 20px 20px;
+    border-top:1px dashed var(--line);
+    padding-top:16px;
+    margin:0 20px 20px;
+    padding-left:0;padding-right:0;
+  }
+  .result-reason{
+    font-size:14px;
+    line-height:1.65;
+    color:var(--ink);
+    margin:0 0 12px;
+  }
+  .result-tip{
+    display:flex;
+    gap:10px;
+    background:var(--accent-soft);
+    border-radius:12px;
+    padding:12px 14px;
+    font-size:13.5px;
+    line-height:1.6;
+  }
+  .result-tip svg{flex-shrink:0; margin-top:2px;}
+
+  .retry-row{
+    display:flex; gap:10px;
+    padding:0 20px 20px;
+  }
+
+  .error-box{
+    margin-top:16px;
+    background:var(--hazard-soft);
+    border:1px solid rgba(193,71,58,0.3);
+    color:#7a2e25;
+    border-radius:14px;
+    padding:14px 16px;
+    font-size:13.5px;
+    line-height:1.6;
+    display:none;
+  }
+  .error-box.show{display:block;}
+
+  /* ---- legend ---- */
+  .legend{
+    margin-top:28px;
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:8px;
+  }
+  .legend-item{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:11px 12px;
+    border-radius:12px;
+    border:1px solid var(--line);
+    background:var(--card);
+  }
+  .legend-dot{
+    width:12px;height:12px;border-radius:4px;flex-shrink:0;
+  }
+  .legend-text{font-size:12.5px;line-height:1.35;}
+  .legend-text b{display:block; font-family:'Kanit',sans-serif; font-weight:600; font-size:13.5px;}
+  .legend-text span{color:var(--ink-soft); font-size:11px;}
+
+  canvas{display:none;}
+
+  footer.foot{
+    margin-top:26px;
+    text-align:center;
+    font-size:11.5px;
+    color:var(--ink-soft);
+    font-family:'IBM Plex Mono',monospace;
+    letter-spacing:0.02em;
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .scanline{animation:none; opacity:0 !important;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="eyebrow"><span class="dot"></span>AI · เครื่องแยกขยะอัจฉริยะ</div>
+    <h1>สแกนแล้วรู้เลย<br>ทิ้งถังไหนดี</h1>
+    <div class="sub">เล็งกล้องไปที่ขยะ แล้วให้ AI ที่ทำงานในเบราว์เซอร์ของคุณช่วยแยกว่าเป็นขยะอันตราย ขยะทั่วไป ขยะอินทรีย์ หรือขยะรีไซเคิล — ไม่ต้องมี API key ไม่ต้องเชื่อมต่อเซิร์ฟเวอร์ใดๆ รูปภาพไม่ออกจากเครื่องคุณเลย</div>
+  </header>
+
+  <div class="scanner" id="scanner">
+    <video id="video" autoplay playsinline muted></video>
+    <img class="captured-img" id="capturedImg" alt="ภาพขยะที่ถ่าย">
+
+    <div class="veil" id="veil">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 7V5a1 1 0 0 1 1-1h2M20 7V5a1 1 0 0 1-1-1h-2M4 17v2a1 1 0 0 0 1 1h2M20 17v2a1 1 0 0 0-1 1h-2"/><circle cx="12" cy="12" r="4"/></svg>
+      <div id="veilText">กำลังขอสิทธิ์เข้าถึงกล้อง…</div>
+      <button class="side-btn" id="uploadFromVeil" style="color:#F1EFE0;border-color:rgba(241,239,224,0.4);">อัปโหลดรูปภาพแทน</button>
+    </div>
+
+    <div class="brackets" id="brackets">
+      <span class="tl"></span><span class="tr"></span><span class="bl"></span><span class="br"></span>
+    </div>
+    <div class="scanline"></div>
+    <div class="hint-chip" id="hintChip">วางขยะให้อยู่ในกรอบ</div>
+  </div>
+
+  <div class="controls">
+    <button class="side-btn" id="uploadBtn">อัปโหลดรูป</button>
+    <button class="shutter" id="shutterBtn" title="ถ่ายภาพเพื่อสแกน"><div class="ring"></div></button>
+    <button class="side-btn" id="rescanBtn" style="visibility:hidden;">สแกนใหม่</button>
+  </div>
+
+  <input type="file" id="fileInput" accept="image/*">
+  <canvas id="canvas"></canvas>
+
+  <div class="error-box" id="errorBox"></div>
+
+  <div class="result" id="result">
+    <div class="result-head">
+      <div class="result-icon" id="resultIcon"></div>
+      <div>
+        <div class="result-title-th" id="resultTitleTh">—</div>
+        <div class="result-title-en" id="resultTitleEn">—</div>
+      </div>
+    </div>
+    <div class="confidence-row">
+      <div class="confidence-label"><span>ความมั่นใจของ AI</span><span id="confidenceValue">0%</span></div>
+      <div class="confidence-track"><div class="confidence-fill" id="confidenceFill"></div></div>
+    </div>
+    <div class="result-body">
+      <p class="result-reason" id="resultReason"></p>
+      <div class="result-tip">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18h6M10 22h4M12 2a6 6 0 0 0-3.6 10.8c.5.4.8 1 .8 1.7V15h5.6v-.5c0-.7.3-1.3.8-1.7A6 6 0 0 0 12 2Z"/></svg>
+        <span id="resultTip"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:var(--organic)"></div><div class="legend-text"><b>ขยะอินทรีย์</b><span>เศษอาหาร เปลือกผลไม้ ใบไม้</span></div></div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--recycle)"></div><div class="legend-text"><b>ขยะรีไซเคิล</b><span>ขวด กระดาษ กระป๋อง พลาสติก</span></div></div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--general)"></div><div class="legend-text"><b>ขยะทั่วไป</b><span>ทิ้งยาก ไม่คุ้มรีไซเคิล</span></div></div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--hazard)"></div><div class="legend-text"><b>ขยะอันตราย</b><span>ถ่านไฟฉาย สารเคมี หลอดไฟ</span></div></div>
+  </div>
+
+  <footer class="foot">จำแนกด้วยโมเดล AI ที่ทำงานในเบราว์เซอร์ล้วนๆ (ไม่ส่งรูปออกจากเครื่อง) · ผลลัพธ์เป็นการประมาณ โปรดใช้วิจารณญาณ</footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js"></script>
+<script>
+const CATS = {
+  organic:{ th:"ขยะอินทรีย์", en:"ORGANIC WASTE", color:"var(--organic)", soft:"var(--organic-soft)",
+    icon:'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3F7D45" stroke-width="2"><path d="M12 22c6-2 8-7 8-12a8 8 0 0 0-8-8 8 8 0 0 0-8 8c0 5 2 10 8 12Z"/><path d="M12 22V10"/></svg>' },
+  recycle:{ th:"ขยะรีไซเคิล", en:"RECYCLABLE", color:"var(--recycle)", soft:"var(--recycle-soft)",
+    icon:'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#C99A2E" stroke-width="2"><path d="m7 19-3-3 3-3"/><path d="M4 16h9a4 4 0 0 0 4-4"/><path d="m17 5 3 3-3 3"/><path d="M20 8h-9a4 4 0 0 0-4 4v1"/></svg>' },
+  general:{ th:"ขยะทั่วไป", en:"GENERAL WASTE", color:"var(--general)", soft:"var(--general-soft)",
+    icon:'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3A6EA5" stroke-width="2"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>' },
+  hazard:{ th:"ขยะอันตราย", en:"HAZARDOUS WASTE", color:"var(--hazard)", soft:"var(--hazard-soft)",
+    icon:'<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#C1473A" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>' }
+};
+
+// คำใบ้จากป้ายชื่อคลาสของโมเดล (ImageNet) แมปเข้ากับ 4 ถังขยะ
+// จับคู่แบบ "มีคำนี้อยู่ในป้ายชื่อ" ไม่ต้องตรงเป๊ะ เพราะป้ายชื่อมักมีหลายคำคั่นด้วยจุลภาค
+const KEYWORDS = {
+  organic: ["banana","orange","lemon","pineapple","strawberry","pomegranate","fig","corn","mushroom",
+    "artichoke","cucumber","bell pepper","cauliflower","broccoli","zucchini","squash","cabbage",
+    "custard apple","jackfruit","cardoon","granny smith","hotdog","pizza","guacamole","mashed potato",
+    "meatloaf","burrito","trifle","ice cream","ice lolly","french loaf","bagel","pretzel","potpie"],
+  recycle: ["bottle","can opener","milk can","beer glass","wine glass","cup","coffee mug","carton",
+    "packet","envelope","paper towel","cardboard","box","crate","barrel","vase","jug","plate","tray",
+    "magazine","book jacket","menu","comic book","corkscrew","wallet"],
+  hazard: ["car battery","hair spray","lighter","match","syringe","thermometer","rifle","revolver",
+    "gasmask","gas pump","cleaver","letter opener","chain saw"],
+  general: ["plastic bag","diaper","tissue","paper napkin","sock","rubber eraser","sponge","broom",
+    "swab","doormat","shower cap","wig","face powder","binder","cassette","disk brake","nail"]
+};
+
+const TIPS = {
+  organic: "ล้างเศษปนเปื้อนออกก่อน แล้วทิ้งถังขยะอินทรีย์ หรือนำไปทำปุ๋ยหมัก",
+  recycle: "ล้างให้สะอาดและแห้ง แล้วแยกทิ้งถังรีไซเคิล",
+  general: "ห่อให้เรียบร้อยแล้วทิ้งถังขยะทั่วไป",
+  hazard: "ห้ามทิ้งรวมกับขยะทั่วไป นำไปทิ้งจุดรับขยะอันตรายโดยเฉพาะ"
+};
+
+const video = document.getElementById('video');
+const capturedImg = document.getElementById('capturedImg');
+const scanner = document.getElementById('scanner');
+const veil = document.getElementById('veil');
+const veilText = document.getElementById('veilText');
+const shutterBtn = document.getElementById('shutterBtn');
+const rescanBtn = document.getElementById('rescanBtn');
+const uploadBtn = document.getElementById('uploadBtn');
+const uploadFromVeil = document.getElementById('uploadFromVeil');
+const fileInput = document.getElementById('fileInput');
+const hintChip = document.getElementById('hintChip');
+const errorBox = document.getElementById('errorBox');
+const result = document.getElementById('result');
+
+let stream = null;
+let model = null;
+let modelLoading = true;
+
+shutterBtn.disabled = true;
+uploadBtn.disabled = true;
+
+async function loadModel(){
+  try{
+    model = await mobilenet.load({ version: 2, alpha: 1.0 });
+    modelLoading = false;
+    shutterBtn.disabled = false;
+    uploadBtn.disabled = false;
+    if(stream) hintChip.textContent = "วางขยะให้อยู่ในกรอบ แล้วกดปุ่มถ่าย";
+    if(veil.dataset.stage === 'model') veil.classList.add('hidden');
+  }catch(err){
+    console.error(err);
+    veil.classList.remove('hidden');
+    veil.dataset.stage = 'model-error';
+    veilText.textContent = "โหลดโมเดล AI ไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ตแล้วรีเฟรชหน้านี้ (โหลดโมเดลครั้งแรกต้องใช้อินเทอร์เน็ต)";
+  }
+}
+loadModel();
+
+async function startCamera(){
+  veil.classList.remove('hidden');
+  veil.dataset.stage = 'camera';
+  veilText.textContent = "กำลังขอสิทธิ์เข้าถึงกล้อง…";
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:"environment" }, audio:false });
+    video.srcObject = stream;
+    if(!modelLoading){
+      veil.classList.add('hidden');
+      hintChip.textContent = "วางขยะให้อยู่ในกรอบ แล้วกดปุ่มถ่าย";
+    }else{
+      veil.dataset.stage = 'model';
+      veilText.textContent = "กำลังโหลดโมเดล AI ครั้งแรก (ประมาณ 5–10 วินาที)…";
+    }
+  }catch(err){
+    veil.dataset.stage = 'camera-error';
+    veilText.textContent = "เข้าถึงกล้องไม่ได้ (ต้องอนุญาตสิทธิ์ หรืออุปกรณ์นี้ไม่รองรับ) ลองอัปโหลดรูปแทนได้เลย";
+  }
+}
+startCamera();
+
+function setScanningState(on){
+  scanner.classList.toggle('scanning', on);
+  shutterBtn.disabled = on || modelLoading;
+  hintChip.textContent = on ? "AI กำลังวิเคราะห์ภาพ…" : hintChip.textContent;
+}
+
+function clearCategoryState(){
+  scanner.classList.remove('state-organic','state-recycle','state-general','state-hazard');
+}
+
+function drawToCanvas(sourceEl, maxW){
+  const c = document.createElement('canvas');
+  let w = sourceEl.videoWidth || sourceEl.naturalWidth || sourceEl.width;
+  let h = sourceEl.videoHeight || sourceEl.naturalHeight || sourceEl.height;
+  const scale = Math.min(1, maxW / w);
+  c.width = Math.max(1, Math.round(w * scale));
+  c.height = Math.max(1, Math.round(h * scale));
+  const ctx = c.getContext('2d');
+  ctx.drawImage(sourceEl, 0, 0, c.width, c.height);
+  return c;
+}
+
+async function captureFromVideo(){
+  if(!stream || modelLoading) return;
+  const c = drawToCanvas(video, 700);
+  capturedImg.src = c.toDataURL('image/jpeg', 0.85);
+  capturedImg.style.display = "block";
+  video.style.display = "none";
+  runScan(c);
+}
+
+function handleFile(file){
+  errorBox.classList.remove('show');
+
+  if(!file.type.startsWith('image/')){
+    errorBox.textContent = "ไฟล์นี้ไม่ใช่รูปภาพ กรุณาเลือกไฟล์ JPG หรือ PNG";
+    errorBox.classList.add('show');
+    return;
+  }
+  const isHeic = /heic|heif/i.test(file.type) || /\.heic$|\.heif$/i.test(file.name || '');
+  if(isHeic){
+    errorBox.textContent = "ไฟล์นี้เป็นชนิด HEIC ซึ่งเบราว์เซอร์เปิดดูไม่ได้ กรุณาถ่ายภาพผ่านปุ่มกล้องในเว็บนี้แทน หรือเลือกไฟล์ JPG/PNG";
+    errorBox.classList.add('show');
+    return;
+  }
+  if(modelLoading){
+    errorBox.textContent = "โมเดล AI ยังโหลดไม่เสร็จ กรุณารอสักครู่แล้วลองใหม่";
+    errorBox.classList.add('show');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onerror = () => {
+    errorBox.textContent = "อ่านไฟล์รูปภาพไม่สำเร็จ ลองเลือกไฟล์อื่น";
+    errorBox.classList.add('show');
+  };
+  reader.onload = () => {
+    const img = new Image();
+    img.onerror = () => {
+      errorBox.textContent = "เปิดไฟล์รูปนี้ไม่ได้ กรุณาเลือกไฟล์ JPG หรือ PNG หรือถ่ายภาพใหม่ผ่านกล้องในเว็บนี้แทน";
+      errorBox.classList.add('show');
+    };
+    img.onload = () => {
+      try{
+        const c = drawToCanvas(img, 700);
+        capturedImg.src = c.toDataURL('image/jpeg', 0.85);
+        capturedImg.style.display = "block";
+        video.style.display = "none";
+        veil.classList.add('hidden');
+        runScan(c);
+      }catch(e){
+        console.error(e);
+        errorBox.textContent = "ประมวลผลรูปภาพไม่สำเร็จ: " + e.message;
+        errorBox.classList.add('show');
+      }
+    };
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+shutterBtn.addEventListener('click', captureFromVideo);
+uploadBtn.addEventListener('click', () => fileInput.click());
+uploadFromVeil.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', (e) => {
+  if(e.target.files && e.target.files[0]) handleFile(e.target.files[0]);
+});
+
+rescanBtn.addEventListener('click', () => {
+  capturedImg.style.display = "none";
+  video.style.display = "block";
+  result.classList.remove('show');
+  errorBox.classList.remove('show');
+  clearCategoryState();
+  rescanBtn.style.visibility = "hidden";
+  hintChip.textContent = "วางขยะให้อยู่ในกรอบ แล้วกดปุ่มถ่าย";
+  if(!stream) startCamera();
+});
+
+function mapPredictionsToCategory(predictions){
+  const scores = { organic:0, recycle:0, general:0, hazard:0 };
+  let matched = false;
+
+  for(const p of predictions){
+    const labels = p.className.toLowerCase().split(',').map(s => s.trim());
+    for(const cat in KEYWORDS){
+      for(const kw of KEYWORDS[cat]){
+        if(labels.some(l => l.includes(kw))){
+          scores[cat] += p.probability;
+          matched = true;
+        }
+      }
+    }
+  }
+
+  let best = 'general';
+  let bestScore = 0;
+  for(const cat in scores){
+    if(scores[cat] > bestScore){ bestScore = scores[cat]; best = cat; }
+  }
+
+  const topLabel = predictions[0] ? predictions[0].className.split(',')[0].trim() : "ไม่ทราบ";
+  let confidence;
+  if(matched){
+    confidence = Math.round(Math.min(bestScore, 1) * 100);
+  }else{
+    best = 'general';
+    confidence = Math.round((predictions[0] ? predictions[0].probability : 0.3) * 45);
+  }
+
+  return { category: best, confidence, topLabel, matched };
+}
+
+async function runScan(canvasEl){
+  errorBox.classList.remove('show');
+  result.classList.remove('show');
+  clearCategoryState();
+  setScanningState(true);
+
+  try{
+    if(!model) throw new Error("โมเดล AI ยังไม่พร้อม กรุณารอสักครู่แล้วลองใหม่");
+    const predictions = await model.classify(canvasEl, 5);
+    const { category, confidence, topLabel, matched } = mapPredictionsToCategory(predictions);
+
+    const reason = matched
+      ? `AI จำแนกวัตถุใกล้เคียงกับ “${topLabel}” จึงจัดอยู่ในกลุ่มนี้`
+      : `AI ยังไม่รู้จักวัตถุนี้ชัดเจน (ใกล้เคียงกับ “${topLabel}”) จึงจัดเป็นขยะทั่วไปไว้ก่อน แนะนำให้ตรวจสอบด้วยตาอีกครั้ง โดยเฉพาะถ้าอาจเป็นขยะอันตราย`;
+
+    showResult({ category, confidence, reason_th: reason, tip_th: TIPS[category] });
+
+  }catch(err){
+    console.error(err);
+    errorBox.textContent = err.message + " — ลองสแกนใหม่อีกครั้ง";
+    errorBox.classList.add('show');
+  }finally{
+    setScanningState(false);
+    rescanBtn.style.visibility = "visible";
+  }
+}
+
+function showResult(parsed){
+  const cat = CATS[parsed.category];
+  clearCategoryState();
+  scanner.classList.add('state-' + parsed.category);
+
+  document.getElementById('resultIcon').innerHTML = cat.icon;
+  document.getElementById('resultIcon').style.background = cat.soft;
+  document.getElementById('resultTitleTh').textContent = cat.th;
+  document.getElementById('resultTitleEn').textContent = cat.en;
+  document.getElementById('resultReason').textContent = parsed.reason_th || "";
+  document.getElementById('resultTip').textContent = parsed.tip_th || "";
+
+  const conf = Math.max(0, Math.min(100, Math.round(parsed.confidence || 0)));
+  document.getElementById('confidenceValue').textContent = conf + "%";
+  const fill = document.getElementById('confidenceFill');
+  fill.style.background = cat.color;
+  requestAnimationFrame(() => { fill.style.width = conf + "%"; });
+
+  hintChip.textContent = "ผลลัพธ์: " + cat.th;
+  result.classList.add('show');
+}
+</script>
+</body>
+</html>
